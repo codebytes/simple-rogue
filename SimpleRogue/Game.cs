@@ -145,7 +145,7 @@ public class Game
             {
                 AddMessage($"You picked up a {item.Name} and restored health!");
             }
-            else if (item is Gold gold)
+            else if (item is Gold)
             {
                 AddMessage($"You picked up {item.Name}!");
             }
