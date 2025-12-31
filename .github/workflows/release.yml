@@ -10,121 +10,118 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  version:
     runs-on: ubuntu-latest
-    
+    outputs:
+      semVer: ${{ steps.version.outputs.semVer }}
+      assemblySemVer: ${{ steps.version.outputs.assemblySemVer }}
+      assemblySemFileVer: ${{ steps.version.outputs.assemblySemFileVer }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history required for GitVersion
-      
+          fetch-depth: 0
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      
+
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@v4.2.0
         with:
           versionSpec: '6.4.x'
-      
+
       - name: Determine Version
         id: version
         uses: gittools/actions/gitversion/execute@v4.2.0
-      
+
       - name: Display Version
-        run: |
-          echo "SemVer: ${{ steps.version.outputs.semVer }}"
-          echo "Major: ${{ steps.version.outputs.major }}"
-          echo "Minor: ${{ steps.version.outputs.minor }}"
-          echo "Patch: ${{ steps.version.outputs.patch }}"
-      
+        run: echo "SemVer:${{ steps.version.outputs.semVer }}"
+
+  build:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            artifact: SimpleRogue.exe
+            extension: exe
+          - rid: win-arm64
+            artifact: SimpleRogue.exe
+            extension: exe
+          - rid: linux-x64
+            artifact: SimpleRogue
+            extension: zip
+          - rid: osx-x64
+            artifact: SimpleRogue
+            extension: zip
+          - rid: osx-arm64
+            artifact: SimpleRogue
+            extension: zip
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
       - name: Restore dependencies
         run: dotnet restore SimpleRogue/SimpleRogue.csproj
-      
-      - name: Build and Publish - Windows x64
+
+      - name: Build and Publish
         run: |
           dotnet publish SimpleRogue/SimpleRogue.csproj \
             -c Release \
-            -r win-x64 \
+            -r ${{ matrix.rid }} \
             --self-contained true \
             -p:PublishSingleFile=true \
-            -p:Version=${{ steps.version.outputs.semVer }} \
-            -p:AssemblyVersion=${{ steps.version.outputs.assemblySemVer }} \
-            -p:FileVersion=${{ steps.version.outputs.assemblySemFileVer }} \
-            -o publish/win-x64
-      
-      - name: Build and Publish - Linux x64
+            -p:Version=${{ needs.version.outputs.semVer }} \
+            -p:AssemblyVersion=${{ needs.version.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ needs.version.outputs.assemblySemFileVer }} \
+            -o publish
+
+      - name: Package artifact
         run: |
-          dotnet publish SimpleRogue/SimpleRogue.csproj \
-            -c Release \
-            -r linux-x64 \
-            --self-contained true \
-            -p:PublishSingleFile=true \
-            -p:Version=${{ steps.version.outputs.semVer }} \
-            -p:AssemblyVersion=${{ steps.version.outputs.assemblySemVer }} \
-            -p:FileVersion=${{ steps.version.outputs.assemblySemFileVer }} \
-            -o publish/linux-x64
-      
-      - name: Build and Publish - macOS x64
-        run: |
-          dotnet publish SimpleRogue/SimpleRogue.csproj \
-            -c Release \
-            -r osx-x64 \
-            --self-contained true \
-            -p:PublishSingleFile=true \
-            -p:Version=${{ steps.version.outputs.semVer }} \
-            -p:AssemblyVersion=${{ steps.version.outputs.assemblySemVer }} \
-            -p:FileVersion=${{ steps.version.outputs.assemblySemFileVer }} \
-            -o publish/osx-x64
-      
-      - name: Build and Publish - macOS ARM64
-        run: |
-          dotnet publish SimpleRogue/SimpleRogue.csproj \
-            -c Release \
-            -r osx-arm64 \
-            --self-contained true \
-            -p:PublishSingleFile=true \
-            -p:Version=${{ steps.version.outputs.semVer }} \
-            -p:AssemblyVersion=${{ steps.version.outputs.assemblySemVer }} \
-            -p:FileVersion=${{ steps.version.outputs.assemblySemFileVer }} \
-            -o publish/osx-arm64
-      
-      - name: Package artifacts
-        run: |
-          VERSION=${{ steps.version.outputs.semVer }}
-          
-          # Windows x64 - Single executable
-          mv publish/win-x64/SimpleRogue.exe publish/SimpleRogue_win-x64_v${VERSION}.exe
-          
-          # Linux x64 - Zip archive
-          cd publish/linux-x64
-          zip -r ../SimpleRogue_linux-x64_v${VERSION}.zip .
-          cd ../..
-          
-          # macOS x64 - Zip archive
-          cd publish/osx-x64
-          zip -r ../SimpleRogue_osx-x64_v${VERSION}.zip .
-          cd ../..
-          
-          # macOS ARM64 - Zip archive
-          cd publish/osx-arm64
-          zip -r ../SimpleRogue_osx-arm64_v${VERSION}.zip .
-          cd ../..
-      
+          VERSION=${{ needs.version.outputs.semVer }}
+          if [ "${{ matrix.extension }}" == "zip" ]; then
+            cd publish
+            zip -r ../SimpleRogue_${{ matrix.rid }}_v${VERSION}.zip .
+            cd ..
+          else
+            mv publish/${{ matrix.artifact }} SimpleRogue_${{ matrix.rid }}_v${VERSION}.${{ matrix.extension }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleRogue_${{ matrix.rid }}
+          path: SimpleRogue_${{ matrix.rid }}_v${{ needs.version.outputs.semVer }}.*
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.version.outputs.semVer }}
-          name: Release v${{ steps.version.outputs.semVer }}
+          tag_name: v${{ needs.version.outputs.semVer }}
+          name: Release v${{ needs.version.outputs.semVer }}
           draft: false
           prerelease: false
           generate_release_notes: true
-          files: |
-            publish/SimpleRogue_win-x64_v${{ steps.version.outputs.semVer }}.exe
-            publish/SimpleRogue_linux-x64_v${{ steps.version.outputs.semVer }}.zip
-            publish/SimpleRogue_osx-x64_v${{ steps.version.outputs.semVer }}.zip
-            publish/SimpleRogue_osx-arm64_v${{ steps.version.outputs.semVer }}.zip
+          files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
