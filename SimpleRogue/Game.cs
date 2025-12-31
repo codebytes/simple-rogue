@@ -1,215 +1,147 @@
+using System.Text;
+
 namespace SimpleRogue;
 
-public enum GameState
-{
-    Playing,
-    GameOver,
-    Victory
-}
+public enum GameState { Playing, GameOver, Victory }
 
 public class Game
 {
     private readonly Dungeon _dungeon;
     private readonly Player _player;
-    private readonly List<Enemy> _enemies;
-    private readonly List<Item> _items;
-    private readonly List<string> _messageLog;
-    public GameState State { get; private set; }
+    private readonly List<Enemy> _enemies = [];
+    private readonly List<Item> _items = [];
+    private readonly List<string> _messageLog = [];
+    private readonly Random _random = new();
+
+    public GameState State { get; private set; } = GameState.Playing;
+
+    // Input key to direction mapping
+    private static readonly Dictionary<ConsoleKey, (int dx, int dy)> MovementKeys = new()
+    {
+        [ConsoleKey.UpArrow] = (0, -1),    [ConsoleKey.W] = (0, -1), [ConsoleKey.K] = (0, -1),
+        [ConsoleKey.DownArrow] = (0, 1),   [ConsoleKey.S] = (0, 1),  [ConsoleKey.J] = (0, 1),
+        [ConsoleKey.LeftArrow] = (-1, 0),  [ConsoleKey.A] = (-1, 0), [ConsoleKey.H] = (-1, 0),
+        [ConsoleKey.RightArrow] = (1, 0),  [ConsoleKey.D] = (1, 0),  [ConsoleKey.L] = (1, 0)
+    };
 
     public Game()
     {
         _dungeon = new Dungeon(80, 24);
         _player = new Player(_dungeon.GetRandomFloorPosition());
-        _enemies = new List<Enemy>();
-        _items = new List<Item>();
-        _messageLog = new List<string>();
-        State = GameState.Playing;
 
-        SpawnEnemies();
-        SpawnItems();
+        SpawnEntities();
         AddMessage("Welcome to Simple Rogue! Defeat all enemies to win. Press 'q' to quit.");
     }
 
-    public void Render(Action<string> displayCallback)
+    public string RenderToString()
     {
         var buffer = new char[_dungeon.Width, _dungeon.Height];
 
-        // Draw dungeon
-        for (int x = 0; x < _dungeon.Width; x++)
-        {
-            for (int y = 0; y < _dungeon.Height; y++)
-            {
+        // Layer 1: Dungeon tiles
+        for (int y = 0; y < _dungeon.Height; y++)
+            for (int x = 0; x < _dungeon.Width; x++)
                 buffer[x, y] = _dungeon.GetTile(new Position(x, y)).GetSymbol();
-            }
-        }
 
-        // Draw items
+        // Layer 2: Items
         foreach (var item in _items)
-        {
             if (_dungeon.IsInBounds(item.Position.X, item.Position.Y))
-            {
                 buffer[item.Position.X, item.Position.Y] = item.Symbol;
-            }
-        }
 
-        // Draw enemies
+        // Layer 3: Enemies (alive only)
         foreach (var enemy in _enemies.Where(e => e.IsAlive))
-        {
             if (_dungeon.IsInBounds(enemy.Position.X, enemy.Position.Y))
-            {
                 buffer[enemy.Position.X, enemy.Position.Y] = enemy.Symbol;
-            }
-        }
 
-        // Draw player
+        // Layer 4: Player (top layer)
         if (_dungeon.IsInBounds(_player.Position.X, _player.Position.Y))
-        {
             buffer[_player.Position.X, _player.Position.Y] = _player.Symbol;
-        }
 
-        // Build output
-        var output = new System.Text.StringBuilder();
+        // Convert to string
+        var output = new StringBuilder();
         for (int y = 0; y < _dungeon.Height; y++)
         {
             for (int x = 0; x < _dungeon.Width; x++)
-            {
                 output.Append(buffer[x, y]);
-            }
             output.AppendLine();
         }
-
-        displayCallback(output.ToString());
+        return output.ToString();
     }
 
     public void ProcessInput(ConsoleKeyInfo key)
     {
-        if (State != GameState.Playing)
-        {
-            return;
-        }
+        if (State != GameState.Playing) return;
+        if (!MovementKeys.TryGetValue(key.Key, out var direction)) return;
 
-        Position? newPosition = null;
-
-        switch (key.Key)
-        {
-            case ConsoleKey.UpArrow or ConsoleKey.W or ConsoleKey.K:
-                newPosition = _player.Position.Move(0, -1);
-                break;
-            case ConsoleKey.DownArrow or ConsoleKey.S or ConsoleKey.J:
-                newPosition = _player.Position.Move(0, 1);
-                break;
-            case ConsoleKey.LeftArrow or ConsoleKey.A or ConsoleKey.H:
-                newPosition = _player.Position.Move(-1, 0);
-                break;
-            case ConsoleKey.RightArrow or ConsoleKey.D or ConsoleKey.L:
-                newPosition = _player.Position.Move(1, 0);
-                break;
-        }
-
-        if (newPosition != null)
-        {
-            TryMovePlayer(newPosition);
-            EnemyTurn();
-            CheckGameState();
-        }
+        var newPosition = _player.Position.Move(direction.dx, direction.dy);
+        TryMovePlayer(newPosition);
+        ProcessEnemyTurns();
+        UpdateGameState();
     }
 
     private void TryMovePlayer(Position newPosition)
     {
-        // Check for enemy at new position
+        // Attack enemy if present
         var enemy = _enemies.FirstOrDefault(e => e.IsAlive && e.Position == newPosition);
         if (enemy != null)
         {
-            AttackEnemy(enemy);
+            Attack(_player, enemy);
+            if (!enemy.IsAlive) AddMessage($"The {enemy.Name} has been defeated!");
             return;
         }
 
-        // Check if position is walkable
+        // Check walkability
         if (!_dungeon.IsWalkable(newPosition))
         {
             AddMessage("You can't move there!");
             return;
         }
 
-        // Move player
+        // Move and collect items
         _player.Position = newPosition;
-
-        // Check for items
         var item = _items.FirstOrDefault(i => i.Position == newPosition);
         if (item != null)
         {
-            item.Use(_player);
+            item.Apply(_player);
             _items.Remove(item);
-
-            if (item is HealthPotion)
-            {
-                AddMessage($"You picked up a {item.Name} and restored health!");
-            }
-            else if (item is Gold)
-            {
-                AddMessage($"You picked up {item.Name}!");
-            }
+            AddMessage(item.GetPickupMessage());
         }
     }
 
-    private void AttackEnemy(Enemy enemy)
+    private void Attack(Entity attacker, Entity target)
     {
-        int damage = _player.Attack;
-        enemy.TakeDamage(damage);
-        AddMessage($"You hit the {enemy.Name} for {damage} damage!");
-
-        if (!enemy.IsAlive)
-        {
-            AddMessage($"The {enemy.Name} has been defeated!");
-        }
+        target.TakeDamage(attacker.Attack);
+        AddMessage($"{(attacker == _player ? "You hit" : $"The {attacker.Name} hits you for")} " +
+                   $"{(attacker == _player ? $"the {target.Name} for " : "")}{attacker.Attack} damage!");
     }
 
-    private void EnemyTurn()
+    private void ProcessEnemyTurns()
     {
         foreach (var enemy in _enemies.Where(e => e.IsAlive))
         {
-            // Simple AI: move towards player if adjacent, otherwise random movement
-            int dx = Math.Sign(_player.Position.X - enemy.Position.X);
-            int dy = Math.Sign(_player.Position.Y - enemy.Position.Y);
+            var dx = Math.Sign(_player.Position.X - enemy.Position.X);
+            var dy = Math.Sign(_player.Position.Y - enemy.Position.Y);
+            var distX = Math.Abs(_player.Position.X - enemy.Position.X);
+            var distY = Math.Abs(_player.Position.Y - enemy.Position.Y);
 
-            // Check if adjacent to player
-            if (Math.Abs(_player.Position.X - enemy.Position.X) <= 1 &&
-                Math.Abs(_player.Position.Y - enemy.Position.Y) <= 1 &&
-                (dx != 0 || dy != 0))
+            // Adjacent to player? Attack!
+            if (distX <= 1 && distY <= 1 && (dx != 0 || dy != 0))
             {
-                // Attack player
-                int damage = enemy.Attack;
-                _player.TakeDamage(damage);
-                AddMessage($"The {enemy.Name} hits you for {damage} damage!");
+                _player.TakeDamage(enemy.Attack);
+                AddMessage($"The {enemy.Name} hits you for {enemy.Attack} damage!");
+                continue;
             }
-            else
-            {
-                // Try to move towards player
-                Position newPosition;
-                if (Math.Abs(dx) > Math.Abs(dy))
-                {
-                    newPosition = enemy.Position.Move(dx, 0);
-                }
-                else if (dy != 0)
-                {
-                    newPosition = enemy.Position.Move(0, dy);
-                }
-                else
-                {
-                    continue;
-                }
 
-                // Only move if position is walkable and not occupied by another enemy
-                if (_dungeon.IsWalkable(newPosition) &&
-                    !_enemies.Any(e => e.IsAlive && e.Position == newPosition && e != enemy))
-                {
-                    enemy.Position = newPosition;
-                }
-            }
+            // Move towards player
+            var newPos = distX > distY ? enemy.Position.Move(dx, 0) 
+                       : dy != 0 ? enemy.Position.Move(0, dy) 
+                       : enemy.Position;
+
+            if (_dungeon.IsWalkable(newPos) && !_enemies.Any(e => e.IsAlive && e.Position == newPos && e != enemy))
+                enemy.Position = newPos;
         }
     }
 
-    private void CheckGameState()
+    private void UpdateGameState()
     {
         if (!_player.IsAlive)
         {
@@ -223,82 +155,46 @@ public class Game
         }
     }
 
-    private void SpawnEnemies()
+    private void SpawnEntities()
     {
-        var random = new Random();
-        int enemyCount = random.Next(5, 10);
-
+        // Spawn enemies
+        int enemyCount = _random.Next(5, 10);
         for (int i = 0; i < enemyCount; i++)
-        {
-            var position = GetRandomEmptyPosition();
-            var enemyType = random.Next(3);
+            _enemies.Add(Enemy.CreateRandom(GetRandomEmptyPosition(), _random));
 
-            Enemy enemy = enemyType switch
-            {
-                0 => Enemy.CreateGoblin(position),
-                1 => Enemy.CreateOrc(position),
-                _ => Enemy.CreateTroll(position)
-            };
-
-            _enemies.Add(enemy);
-        }
-    }
-
-    private void SpawnItems()
-    {
-        var random = new Random();
-        int potionCount = random.Next(3, 6);
-        int goldCount = random.Next(5, 10);
-
+        // Spawn potions
+        int potionCount = _random.Next(3, 6);
         for (int i = 0; i < potionCount; i++)
-        {
-            var position = GetRandomEmptyPosition();
-            _items.Add(new HealthPotion(position));
-        }
+            _items.Add(new HealthPotion(GetRandomEmptyPosition()));
 
+        // Spawn gold
+        int goldCount = _random.Next(5, 10);
         for (int i = 0; i < goldCount; i++)
-        {
-            var position = GetRandomEmptyPosition();
-            _items.Add(new Gold(position, random.Next(5, 20)));
-        }
+            _items.Add(new Gold(GetRandomEmptyPosition(), _random.Next(5, 20)));
     }
 
     private Position GetRandomEmptyPosition()
     {
-        int attempts = 0;
-        const int maxAttempts = 100;
-
-        while (attempts < maxAttempts)
+        for (int attempts = 0; attempts < 100; attempts++)
         {
-            var position = _dungeon.GetRandomFloorPosition();
-
-            if (position != _player.Position &&
-                !_enemies.Any(e => e.Position == position) &&
-                !_items.Any(i => i.Position == position))
-            {
-                return position;
-            }
-
-            attempts++;
+            var pos = _dungeon.GetRandomFloorPosition();
+            if (pos != _player.Position && 
+                !_enemies.Any(e => e.Position == pos) && 
+                !_items.Any(i => i.Position == pos))
+                return pos;
         }
-
         return _dungeon.GetRandomFloorPosition();
     }
 
     private void AddMessage(string message)
     {
         _messageLog.Add(message);
-        if (_messageLog.Count > 5)
-        {
-            _messageLog.RemoveAt(0);
-        }
+        if (_messageLog.Count > 5) _messageLog.RemoveAt(0);
     }
 
-    public string GetStatusBar()
-    {
-        return $"Health: {_player.Health}/{_player.MaxHealth} | Gold: {_player.Gold} | " +
-               $"Enemies: {_enemies.Count(e => e.IsAlive)}/{_enemies.Count}";
-    }
+    public string GetStatusBar() =>
+        $"Health: {_player.Health}/{_player.MaxHealth} | Gold: {_player.Gold} | " +
+        $"Enemies: {_enemies.Count(e => e.IsAlive)}/{_enemies.Count}";
 
     public IEnumerable<string> GetMessages() => _messageLog;
 }
