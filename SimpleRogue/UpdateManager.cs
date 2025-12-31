@@ -1,6 +1,6 @@
 using Spectre.Console;
 using Updatum;
-using System.ComponentModel;
+using System.Reflection;
 
 namespace SimpleRogue;
 
@@ -22,19 +22,6 @@ public static class UpdateManager
             AnsiConsole.MarkupLine("[grey]Checking for updates...[/]");
             
             var updater = new UpdatumManager(RepositoryOwner, RepositoryName);
-            
-            // Subscribe to state changes
-            updater.PropertyChanged += (sender, e) =>
-            {
-                if (e.PropertyName == nameof(UpdatumManager.State))
-                {
-                    AnsiConsole.MarkupLine($"[grey]Update status: {updater.State}[/]");
-                }
-                else if (e.PropertyName == nameof(UpdatumManager.DownloadedPercentage))
-                {
-                    AnsiConsole.MarkupLine($"[yellow]Downloaded: {updater.DownloadedPercentage}%[/]");
-                }
-            };
             
             // Check for updates
             var updateFound = await updater.CheckForUpdatesAsync();
@@ -59,14 +46,47 @@ public static class UpdateManager
                 return;
             }
             
+            var currentVersion = Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+            
+            // Strip metadata (e.g., +commitsha) for cleaner display
+            var displayVersion = currentVersion.Split('+')[0];
+            
+            AnsiConsole.MarkupLine($"[grey]Current version: v{displayVersion}[/]");
             AnsiConsole.MarkupLine($"[green]Update available: {release.TagName}[/]");
-            AnsiConsole.MarkupLine($"[grey]{release.Name}[/]");
             
             if (AnsiConsole.Confirm("Would you like to download and install the update?"))
             {
-                AnsiConsole.MarkupLine("[yellow]Downloading update...[/]");
+                UpdatumDownloadedAsset? download = null;
                 
-                var download = await updater.DownloadUpdateAsync(release);
+                await AnsiConsole.Progress()
+                    .AutoClear(false)
+                    .Columns(
+                    [
+                        new TaskDescriptionColumn(),
+                        new ProgressBarColumn(),
+                        new PercentageColumn(),
+                        new RemainingTimeColumn(),
+                        new SpinnerColumn()
+                    ])
+                    .StartAsync(async ctx =>
+                    {
+                        var downloadTask = ctx.AddTask("[yellow]Downloading update[/]", maxValue: 100);
+                        
+                        // Subscribe to download progress
+                        updater.PropertyChanged += (sender, e) =>
+                        {
+                            if (e.PropertyName == nameof(UpdatumManager.DownloadedPercentage))
+                            {
+                                downloadTask.Value = updater.DownloadedPercentage;
+                            }
+                        };
+                        
+                        download = await updater.DownloadUpdateAsync(release);
+                        downloadTask.Value = 100;
+                    });
+                
                 if (download is null)
                 {
                     AnsiConsole.MarkupLine("[red]Download failed.[/]");
@@ -74,10 +94,13 @@ public static class UpdateManager
                 }
                 
                 AnsiConsole.MarkupLine("[green]Download complete![/]");
-                AnsiConsole.MarkupLine("[yellow]Installing update...[/]");
                 
-                // Install the update (replace the current executable with the downloaded one)
-                await updater.InstallUpdateAsync(download);
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync("[yellow]Installing update...[/]", async ctx =>
+                    {
+                        await updater.InstallUpdateAsync(download);
+                    });
                 
                 AnsiConsole.MarkupLine("[green]Update installed! Please restart the application.[/]");
                 Environment.Exit(0);

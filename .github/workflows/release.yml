@@ -45,24 +45,24 @@ jobs:
     strategy:
       matrix:
         include:
-          - rid: win-x64
-            artifact: SimpleRogue.exe
-            extension: exe
+          # - rid: win-x64
+          #   artifact: SimpleRogue.exe
+          #   extension: exe
           - rid: win-arm64
             artifact: SimpleRogue.exe
             extension: exe
-          - rid: linux-x64
-            artifact: SimpleRogue
-            extension: zip
-          - rid: linux-arm64
-            artifact: SimpleRogue
-            extension: zip
-          - rid: osx-x64
-            artifact: SimpleRogue
-            extension: zip
-          - rid: osx-arm64
-            artifact: SimpleRogue
-            extension: zip
+          # - rid: linux-x64
+          #   artifact: SimpleRogue
+          #   extension: zip
+          # - rid: linux-arm64
+          #   artifact: SimpleRogue
+          #   extension: zip
+          # - rid: osx-x64
+          #   artifact: SimpleRogue
+          #   extension: zip
+          # - rid: osx-arm64
+          #   artifact: SimpleRogue
+          #   extension: zip
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
