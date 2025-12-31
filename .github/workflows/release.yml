@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
@@ -19,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for versioning
+          fetch-depth: 0  # Full history required for GitVersion
       
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -27,20 +25,20 @@ jobs:
           dotnet-version: '10.0.x'
       
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v1.1.1
+        uses: gittools/actions/gitversion/setup@v4.2.0
         with:
-          versionSpec: '6.x'
+          versionSpec: '6.4.x'
       
       - name: Determine Version
-        id: gitversion
-        uses: gittools/actions/gitversion/execute@v1.1.1
-        with:
-          useConfigFile: true
+        id: version
+        uses: gittools/actions/gitversion/execute@v4.2.0
       
-      - name: Display GitVersion outputs
+      - name: Display Version
         run: |
-          echo "SemVer: ${{ steps.gitversion.outputs.semVer }}"
-          echo "AssemblySemVer: ${{ steps.gitversion.outputs.assemblySemVer }}"
+          echo "SemVer: ${{ steps.version.outputs.semVer }}"
+          echo "Major: ${{ steps.version.outputs.major }}"
+          echo "Minor: ${{ steps.version.outputs.minor }}"
+          echo "Patch: ${{ steps.version.outputs.patch }}"
       
       - name: Restore dependencies
         run: dotnet restore SimpleRogue/SimpleRogue.csproj
@@ -52,9 +50,9 @@ jobs:
             -r win-x64 \
             --self-contained true \
             -p:PublishSingleFile=true \
-            -p:Version=${{ steps.gitversion.outputs.assemblySemVer }} \
-            -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
-            -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+            -p:Version=${{ steps.version.outputs.semVer }} \
+            -p:AssemblyVersion=${{ steps.version.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ steps.version.outputs.assemblySemFileVer }} \
             -o publish/win-x64
       
       - name: Build and Publish - Linux x64
@@ -64,9 +62,9 @@ jobs:
             -r linux-x64 \
             --self-contained true \
             -p:PublishSingleFile=true \
-            -p:Version=${{ steps.gitversion.outputs.assemblySemVer }} \
-            -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
-            -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+            -p:Version=${{ steps.version.outputs.semVer }} \
+            -p:AssemblyVersion=${{ steps.version.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ steps.version.outputs.assemblySemFileVer }} \
             -o publish/linux-x64
       
       - name: Build and Publish - macOS x64
@@ -76,9 +74,9 @@ jobs:
             -r osx-x64 \
             --self-contained true \
             -p:PublishSingleFile=true \
-            -p:Version=${{ steps.gitversion.outputs.assemblySemVer }} \
-            -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
-            -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+            -p:Version=${{ steps.version.outputs.semVer }} \
+            -p:AssemblyVersion=${{ steps.version.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ steps.version.outputs.assemblySemFileVer }} \
             -o publish/osx-x64
       
       - name: Build and Publish - macOS ARM64
@@ -88,14 +86,14 @@ jobs:
             -r osx-arm64 \
             --self-contained true \
             -p:PublishSingleFile=true \
-            -p:Version=${{ steps.gitversion.outputs.assemblySemVer }} \
-            -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
-            -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+            -p:Version=${{ steps.version.outputs.semVer }} \
+            -p:AssemblyVersion=${{ steps.version.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ steps.version.outputs.assemblySemFileVer }} \
             -o publish/osx-arm64
       
-      - name: Package artifacts (Updatum compatible naming)
+      - name: Package artifacts
         run: |
-          VERSION=${{ steps.gitversion.outputs.semVer }}
+          VERSION=${{ steps.version.outputs.semVer }}
           
           # Windows x64 - Single executable
           mv publish/win-x64/SimpleRogue.exe publish/SimpleRogue_win-x64_v${VERSION}.exe
@@ -117,17 +115,16 @@ jobs:
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: v${{ steps.gitversion.outputs.semVer }}
-          name: Release v${{ steps.gitversion.outputs.semVer }}
+          tag_name: v${{ steps.version.outputs.semVer }}
+          name: Release v${{ steps.version.outputs.semVer }}
           draft: false
           prerelease: false
           generate_release_notes: true
           files: |
-            publish/SimpleRogue_win-x64_v${{ steps.gitversion.outputs.semVer }}.exe
-            publish/SimpleRogue_linux-x64_v${{ steps.gitversion.outputs.semVer }}.zip
-            publish/SimpleRogue_osx-x64_v${{ steps.gitversion.outputs.semVer }}.zip
-            publish/SimpleRogue_osx-arm64_v${{ steps.gitversion.outputs.semVer }}.zip
+            publish/SimpleRogue_win-x64_v${{ steps.version.outputs.semVer }}.exe
+            publish/SimpleRogue_linux-x64_v${{ steps.version.outputs.semVer }}.zip
+            publish/SimpleRogue_osx-x64_v${{ steps.version.outputs.semVer }}.zip
+            publish/SimpleRogue_osx-arm64_v${{ steps.version.outputs.semVer }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
