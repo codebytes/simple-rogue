@@ -54,6 +54,9 @@ jobs:
           - rid: linux-x64
             artifact: SimpleRogue
             extension: zip
+          - rid: linux-arm64
+            artifact: SimpleRogue
+            extension: zip
           - rid: osx-x64
             artifact: SimpleRogue
             extension: zip
