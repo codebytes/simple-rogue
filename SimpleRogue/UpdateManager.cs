@@ -19,7 +19,7 @@ public static class UpdateManager
     {
         try
         {
-            AnsiConsole.MarkupLine("[grey]Checking for updates...[/]");
+            ConsoleUI.ShowMuted("Checking for updates...");
             
             var updater = new UpdatumManager(RepositoryOwner, RepositoryName);
             
@@ -28,21 +28,21 @@ public static class UpdateManager
             
             if (!updateFound)
             {
-                AnsiConsole.MarkupLine("[grey]You are running the latest version.[/]");
+                ConsoleUI.ShowMuted("You are running the latest version.");
                 return;
             }
             
             var release = updater.LatestRelease;
             if (release is null)
             {
-                AnsiConsole.MarkupLine("[grey]No release information found.[/]");
+                ConsoleUI.ShowMuted("No release information found.");
                 return;
             }
             
             var asset = updater.GetCompatibleReleaseAsset(release);
             if (asset is null)
             {
-                AnsiConsole.MarkupLine("[grey]No compatible update found for your platform.[/]");
+                ConsoleUI.ShowMuted("No compatible update found for your platform.");
                 return;
             }
             
@@ -53,8 +53,8 @@ public static class UpdateManager
             // Strip metadata (e.g., +commitsha) for cleaner display
             var displayVersion = currentVersion.Split('+')[0];
             
-            AnsiConsole.MarkupLine($"[grey]Current version: v{displayVersion}[/]");
-            AnsiConsole.MarkupLine($"[green]Update available: {release.TagName}[/]");
+            ConsoleUI.ShowMuted($"Current version: v{displayVersion}");
+            ConsoleUI.ShowSuccess($"Update available: {release.TagName}");
             
             if (AnsiConsole.Confirm("Would you like to download and install the update?"))
             {
@@ -89,11 +89,11 @@ public static class UpdateManager
                 
                 if (download is null)
                 {
-                    AnsiConsole.MarkupLine("[red]Download failed.[/]");
+                    ConsoleUI.ShowError("Download failed.");
                     return;
                 }
                 
-                AnsiConsole.MarkupLine("[green]Download complete![/]");
+                ConsoleUI.ShowSuccess("Download complete!");
                 
                 await AnsiConsole.Status()
                     .Spinner(Spinner.Known.Dots)
@@ -102,14 +102,14 @@ public static class UpdateManager
                         await updater.InstallUpdateAsync(download);
                     });
                 
-                AnsiConsole.MarkupLine("[green]Update installed! Please restart the application.[/]");
+                ConsoleUI.ShowSuccess("Update installed! Please restart the application.");
                 Environment.Exit(0);
             }
         }
         catch (Exception ex)
         {
             // Silently fail if update check fails (e.g., no internet connection)
-            AnsiConsole.MarkupLine($"[grey]Could not check for updates: {ex.Message}[/]");
+            ConsoleUI.ShowMuted($"Could not check for updates: {ex.Message}");
         }
     }
 }
