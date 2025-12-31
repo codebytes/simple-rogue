@@ -76,7 +76,7 @@ public static class UpdateManager
                 AnsiConsole.MarkupLine("[green]Download complete![/]");
                 AnsiConsole.MarkupLine("[yellow]Installing update...[/]");
                 
-                // Install the update (this will download and replace the current executable)
+                // Install the update (replace the current executable with the downloaded one)
                 await updater.InstallUpdateAsync(download);
                 
                 AnsiConsole.MarkupLine("[green]Update installed! Please restart the application.[/]");
