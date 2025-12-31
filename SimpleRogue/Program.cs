@@ -4,6 +4,12 @@ using Spectre.Console;
 AnsiConsole.Clear();
 AnsiConsole.Write(new FigletText("Simple Rogue").Color(Color.Green));
 AnsiConsole.MarkupLine("[yellow]A basic console dungeon crawler[/]");
+AnsiConsole.WriteLine();
+
+// Check for updates
+await UpdateManager.CheckForUpdatesAsync();
+
+AnsiConsole.WriteLine();
 AnsiConsole.MarkupLine("[grey]Press any key to start...[/]");
 Console.ReadKey(true);
 

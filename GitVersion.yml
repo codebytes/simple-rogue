@@ -1,0 +1,34 @@
+mode: ContinuousDelivery
+branches:
+  main:
+    tag: ''
+    increment: Minor
+    prevent-increment-of-merged-branch-version: false
+    track-merge-target: false
+    regex: ^main$
+    source-branches: []
+  develop:
+    tag: alpha
+    increment: Minor
+    prevent-increment-of-merged-branch-version: false
+    track-merge-target: false
+    regex: ^dev(elop)?(ment)?$
+  feature:
+    tag: alpha
+    increment: Minor
+    regex: ^features?[/-]
+  pull-request:
+    tag: pr
+    increment: Inherit
+    regex: ^(pull|pull\-requests|pr)[/-]
+  hotfix:
+    tag: beta
+    increment: Patch
+    regex: ^hotfix(es)?[/-]
+  release:
+    tag: rc
+    increment: None
+    regex: ^releases?[/-]
+ignore:
+  sha: []
+merge-message-formats: {}

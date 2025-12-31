@@ -1,0 +1,133 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for versioning
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v1.1.1
+        with:
+          versionSpec: '6.x'
+      
+      - name: Determine Version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v1.1.1
+        with:
+          useConfigFile: true
+      
+      - name: Display GitVersion outputs
+        run: |
+          echo "SemVer: ${{ steps.gitversion.outputs.semVer }}"
+          echo "AssemblySemVer: ${{ steps.gitversion.outputs.assemblySemVer }}"
+      
+      - name: Restore dependencies
+        run: dotnet restore SimpleRogue/SimpleRogue.csproj
+      
+      - name: Build and Publish - Windows x64
+        run: |
+          dotnet publish SimpleRogue/SimpleRogue.csproj \
+            -c Release \
+            -r win-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:Version=${{ steps.gitversion.outputs.assemblySemVer }} \
+            -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+            -o publish/win-x64
+      
+      - name: Build and Publish - Linux x64
+        run: |
+          dotnet publish SimpleRogue/SimpleRogue.csproj \
+            -c Release \
+            -r linux-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:Version=${{ steps.gitversion.outputs.assemblySemVer }} \
+            -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+            -o publish/linux-x64
+      
+      - name: Build and Publish - macOS x64
+        run: |
+          dotnet publish SimpleRogue/SimpleRogue.csproj \
+            -c Release \
+            -r osx-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:Version=${{ steps.gitversion.outputs.assemblySemVer }} \
+            -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+            -o publish/osx-x64
+      
+      - name: Build and Publish - macOS ARM64
+        run: |
+          dotnet publish SimpleRogue/SimpleRogue.csproj \
+            -c Release \
+            -r osx-arm64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:Version=${{ steps.gitversion.outputs.assemblySemVer }} \
+            -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
+            -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+            -o publish/osx-arm64
+      
+      - name: Package artifacts (Updatum compatible naming)
+        run: |
+          VERSION=${{ steps.gitversion.outputs.semVer }}
+          
+          # Windows x64 - Single executable
+          mv publish/win-x64/SimpleRogue.exe publish/SimpleRogue_win-x64_v${VERSION}.exe
+          
+          # Linux x64 - Zip archive
+          cd publish/linux-x64
+          zip -r ../SimpleRogue_linux-x64_v${VERSION}.zip .
+          cd ../..
+          
+          # macOS x64 - Zip archive
+          cd publish/osx-x64
+          zip -r ../SimpleRogue_osx-x64_v${VERSION}.zip .
+          cd ../..
+          
+          # macOS ARM64 - Zip archive
+          cd publish/osx-arm64
+          zip -r ../SimpleRogue_osx-arm64_v${VERSION}.zip .
+          cd ../..
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: v${{ steps.gitversion.outputs.semVer }}
+          name: Release v${{ steps.gitversion.outputs.semVer }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            publish/SimpleRogue_win-x64_v${{ steps.gitversion.outputs.semVer }}.exe
+            publish/SimpleRogue_linux-x64_v${{ steps.gitversion.outputs.semVer }}.zip
+            publish/SimpleRogue_osx-x64_v${{ steps.gitversion.outputs.semVer }}.zip
+            publish/SimpleRogue_osx-arm64_v${{ steps.gitversion.outputs.semVer }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
