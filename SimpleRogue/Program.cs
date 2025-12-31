@@ -1,5 +1,17 @@
-﻿using SimpleRogue;
+﻿using System.Reflection;
+using SimpleRogue;
 using Spectre.Console;
+
+// Handle --version command
+if (args.Length > 0 && (args[0] == "--version" || args[0] == "-v"))
+{
+    var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+    var infoVersion = Assembly.GetExecutingAssembly()
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.
+        InformationalVersion ?? version;
+    Console.WriteLine($"SimpleRogue v{infoVersion}");
+    return;
+}
 
 AnsiConsole.Clear();
 AnsiConsole.Write(new FigletText("Simple Rogue").Color(Color.Green));

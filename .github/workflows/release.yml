@@ -89,20 +89,19 @@ jobs:
 
       - name: Package artifact
         run: |
-          VERSION=${{ needs.version.outputs.semVer }}
           if [ "${{ matrix.extension }}" == "zip" ]; then
             cd publish
-            zip -r ../SimpleRogue_${{ matrix.rid }}_v${VERSION}.zip .
+            zip -r ../SimpleRogue_${{ matrix.rid }}.zip .
             cd ..
           else
-            mv publish/${{ matrix.artifact }} SimpleRogue_${{ matrix.rid }}_v${VERSION}.${{ matrix.extension }}
+            mv publish/${{ matrix.artifact }} SimpleRogue_${{ matrix.rid }}.${{ matrix.extension }}
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: SimpleRogue_${{ matrix.rid }}
-          path: SimpleRogue_${{ matrix.rid }}_v${{ needs.version.outputs.semVer }}.*
+          path: SimpleRogue_${{ matrix.rid }}.${{ matrix.extension }}
 
   release:
     needs: [version, build]
